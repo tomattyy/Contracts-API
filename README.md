@@ -160,10 +160,20 @@ load balancer is assumed.
 
 ### Continuous deployment to Docker Desktop
 
-The `Deploy to local Kubernetes` workflow runs only after the `Container`
-workflow succeeds for a push to this repository's `develop` branch. It deploys
-the exact immutable `sha-<commit>` image that was built and scanned. It does
-not run for pull requests or feature branches.
+The `Deploy to local Kubernetes` workflow automatically runs after the
+`Container` workflow succeeds for a push to this repository's `develop` branch.
+It deploys the exact immutable `sha-<commit>` image that was built and scanned;
+pull requests and feature branch pushes do not trigger automatic deployment.
+
+To manually deploy another branch or tag, open **Actions → Deploy to local
+Kubernetes → Run workflow**, then enter its exact Git ref, including the prefix:
+`refs/heads/<branch>` or `refs/tags/<tag>`. For example, use
+`refs/heads/release/1.2` or `refs/tags/v1.2.0`. The workflow checks out that
+revision, builds and scans its production image, publishes it to GHCR under its
+full immutable commit SHA, and only then deploys it. Invalid refs, failed image
+scans, or failed publishing stop the deployment. The workflow file must first
+be merged into the repository's default branch for manual dispatch to be
+available.
 
 GitHub-hosted runners cannot access a developer's Docker Desktop cluster.
 Register a Windows self-hosted GitHub Actions runner on the same machine as the
@@ -172,10 +182,12 @@ configured as `docker-desktop`. The runner must have permission to use that
 context. Do not use this runner for untrusted repositories or workflows.
 
 Before enabling deployments, create the `contracts` namespace and the
-`contracts-api-secrets` Secret as described above, verify the `develop` and
-`sha-<commit>` GHCR images are available, and keep Docker Desktop Kubernetes
-running. The workflow checks its context and required Secrets before applying
-any resources. If the GHCR package is private, create the
+`contracts-api-secrets` Secret as described above, ensure the automatic
+`develop` image is available, and keep Docker Desktop Kubernetes running. For
+manually selected refs, the workflow builds, scans, and publishes the selected
+image before deployment; ensure the repository's `GITHUB_TOKEN` has write
+access to the GHCR package. The workflow checks its context and required
+Secrets before applying any resources. If the GHCR package is private, create the
 `ghcr-pull-secret` in the namespace and set the repository Actions variable
 `GHCR_PRIVATE` to `true`; otherwise leave that variable unset or set to `false`.
 The workflow uses the private GHCR overlay only when this variable is `true`.
