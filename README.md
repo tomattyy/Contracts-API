@@ -158,6 +158,65 @@ Metrics Server. The current Docker Desktop cluster does not have the
 configured. The API Service is ClusterIP; no Ingress controller or external
 load balancer is assumed.
 
+### Local observability
+
+`k8s/observability` contains a standalone Prometheus and Grafana stack. Prometheus
+scrapes the API's existing `/metrics` endpoint every 15 seconds, retains data
+for seven days in an ephemeral volume, and evaluates alerts for an unavailable
+target, a 5xx rate above 5%, and p95 latency above 1000 ms. Grafana provisions
+a Contracts API dashboard for request rate, 5xx ratio, p95 latency, process
+memory, and CPU. No application source changes are required.
+
+Create an administrator password before installing the stack. This PowerShell
+example prompts without echoing the password and applies the Secret through
+standard input:
+
+```powershell
+kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+$securePassword = Read-Host "Grafana admin password" -AsSecureString
+$password = [System.Net.NetworkCredential]::new("", $securePassword).Password
+$encodedPassword = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($password))
+$secret = @{
+  apiVersion = "v1"
+  kind = "Secret"
+  metadata = @{ name = "grafana-admin"; namespace = "observability" }
+  type = "Opaque"
+  data = @{ GF_SECURITY_ADMIN_PASSWORD = $encodedPassword }
+} | ConvertTo-Json -Depth 4 -Compress
+$secret | kubectl apply -f -
+Remove-Variable securePassword, password, encodedPassword, secret
+```
+
+Review and install the stack:
+
+```powershell
+kubectl kustomize k8s/observability
+kubectl apply --dry-run=server -k k8s/observability
+kubectl apply -k k8s/observability
+kubectl -n observability rollout status deployment/prometheus
+kubectl -n observability rollout status deployment/grafana
+```
+
+Use separate terminals for the port-forwards:
+
+```powershell
+kubectl -n observability port-forward service/grafana 3001:3000
+kubectl -n observability port-forward service/prometheus 9090:9090
+```
+
+Open Grafana at `http://localhost:3001` (user `admin`, password from the
+Secret) and Prometheus at `http://localhost:9090`. Check the Prometheus
+`/targets` and `/alerts` pages to confirm scraping and alert evaluation.
+Services are ClusterIP-only; do not expose them publicly without adding
+authentication and an appropriate network policy. Prometheus and Grafana data
+are ephemeral and will be lost when their Pods are replaced. Alerts are
+evaluated and shown in Prometheus but are not sent to an Alertmanager. This
+Prometheus installation does not provide the Kubernetes `metrics.k8s.io` API
+required by the API HPA.
+
+Remove the stack with `kubectl delete -k k8s/observability`. The namespace and
+all its resources, including the Grafana Secret, will be deleted.
+
 ### Continuous deployment to Docker Desktop
 
 The `Deploy to local Kubernetes` workflow automatically runs after the

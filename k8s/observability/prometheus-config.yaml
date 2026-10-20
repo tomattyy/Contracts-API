@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      evaluation_interval: 15s
+      scrape_interval: 15s
+      scrape_timeout: 10s
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets:
+              - localhost:9090
+      - job_name: contracts-api
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - contracts-api.contracts.svc.cluster.local:3000
+  alerts.yaml: |
+    groups:
+      - name: contracts-api
+        rules:
+          - alert: ContractsApiTargetDown
+            expr: up{job="contracts-api"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: Contracts API metrics endpoint is unavailable
+              description: Prometheus cannot scrape the Contracts API /metrics endpoint.
+          - alert: ContractsApiHighServerErrorRate
+            expr: |
+              (
+                sum(rate(http_request_duration_ms_count{job="contracts-api",status_code=~"5.."}[5m]))
+                /
+                clamp_min(sum(rate(http_request_duration_ms_count{job="contracts-api"}[5m])), 0.001)
+              ) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Contracts API server error rate is above 5%
+              description: More than 5% of HTTP requests returned a 5xx status over the last five minutes.
+          - alert: ContractsApiHighP95Latency
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(http_request_duration_ms_bucket{job="contracts-api"}[5m]))
+              ) > 1000
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Contracts API p95 latency exceeds one second
+              description: The 95th percentile HTTP request duration has exceeded 1000 ms for five minutes.
