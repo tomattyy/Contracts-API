@@ -3,3 +3,9 @@ dist/
 coverage/
 .env*
 !.env.example
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
