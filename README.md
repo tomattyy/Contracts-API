@@ -158,6 +158,33 @@ Metrics Server. The current Docker Desktop cluster does not have the
 configured. The API Service is ClusterIP; no Ingress controller or external
 load balancer is assumed.
 
+### Continuous deployment to Docker Desktop
+
+The `Deploy to local Kubernetes` workflow runs only after the `Container`
+workflow succeeds for a push to this repository's `develop` branch. It deploys
+the exact immutable `sha-<commit>` image that was built and scanned. It does
+not run for pull requests or feature branches.
+
+GitHub-hosted runners cannot access a developer's Docker Desktop cluster.
+Register a Windows self-hosted GitHub Actions runner on the same machine as the
+cluster and add the custom label `docker-desktop`; keep its Kubernetes context
+configured as `docker-desktop`. The runner must have permission to use that
+context. Do not use this runner for untrusted repositories or workflows.
+
+Before enabling deployments, create the `contracts` namespace and the
+`contracts-api-secrets` Secret as described above, verify the `develop` and
+`sha-<commit>` GHCR images are available, and keep Docker Desktop Kubernetes
+running. The workflow checks its context and required Secrets before applying
+any resources. If the GHCR package is private, create the
+`ghcr-pull-secret` in the namespace and set the repository Actions variable
+`GHCR_PRIVATE` to `true`; otherwise leave that variable unset or set to `false`.
+The workflow uses the private GHCR overlay only when this variable is `true`.
+
+The deployment targets the GitHub Actions `development` environment. Configure
+its deployment protection rules in repository settings if approval is required
+before deployment. A failed image scan/build prevents deployment; a failed
+rollout is reported as a failed workflow, not treated as a successful deploy.
+
 ## Docker
 
 Docker Compose starts the API with PostgreSQL and Redis for local validation.
