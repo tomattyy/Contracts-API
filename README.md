@@ -21,15 +21,56 @@ npm test
 The `CI` workflow runs these checks on pushes to `develop`, `main`, and
 `feature/**`, and on pull requests targeting `develop` or `main`. A failing
 check fails the workflow. Security scans run separately in the `Security`
-workflow; container publishing, infrastructure, deployment, and observability
-are left for later project phases.
+workflow; infrastructure, deployment, and observability are left for later
+project phases.
 
 The `Security` workflow runs Gitleaks secret detection, Semgrep SAST, `npm audit`
 dependency scanning, and Trivy configuration/IaC scanning on the same branches
 and pull requests. High and critical dependency or IaC findings fail their
 respective checks. Findings are reported rather than automatically fixed.
-IaC scanning is ready for infrastructure files added in later phases; the
-repository does not currently contain Terraform or Kubernetes manifests.
+Trivy scans Terraform and other infrastructure files for high and critical
+misconfigurations.
+
+## Terraform and LocalStack
+
+Terraform provisions an S3 bucket in LocalStack for demonstrating IaC without
+creating AWS resources or incurring cloud costs. The API does not currently use
+this bucket; it is an infrastructure-learning resource. The bucket blocks
+public access, enables versioning, and uses a customer-managed LocalStack KMS
+key for server-side encryption. The Terraform workflow checks formatting and
+validates the configuration, while the Security workflow scans it with Trivy.
+CI does not run `terraform apply`.
+
+1. Install Terraform 1.15.8 and Docker Compose.
+2. Start the LocalStack service with `docker compose up -d localstack`.
+3. From the repository root, set LocalStack's dummy AWS credentials in
+   PowerShell:
+
+   ```powershell
+   $env:AWS_ACCESS_KEY_ID = "test"
+   $env:AWS_SECRET_ACCESS_KEY = "test"
+   $env:AWS_DEFAULT_REGION = "us-east-1"
+   ```
+
+4. Initialize and review the plan:
+
+   ```powershell
+   terraform -chdir=terraform init
+   terraform -chdir=terraform plan
+   ```
+
+5. Apply only to the local LocalStack endpoint:
+
+   ```powershell
+   terraform -chdir=terraform apply
+   ```
+
+The S3 and KMS provider endpoints are explicitly configured to use
+`http://localhost:4566`; AWS credential/account validation is skipped and S3
+path-style requests are enabled. Do not change these endpoints to real AWS
+endpoints without first reviewing the configuration and its potential costs.
+Destroy the local resources with
+`terraform -chdir=terraform destroy` before stopping LocalStack.
 
 ## Docker
 
@@ -47,9 +88,19 @@ Docker Desktop or Docker Engine with the Compose plugin is required.
 The production image uses separate dependency, build, and runtime stages,
 installs only production dependencies in the final image, and runs as the
 non-root `node` user. The container health check uses the existing `/metrics`
-route. The `Container` workflow builds the image without publishing it, scans
-for high and critical vulnerabilities, and uploads a CycloneDX SBOM artifact.
-Registry publishing is reserved for the artifact-management phase.
+route. The `Container` workflow builds and scans an image for high and critical
+vulnerabilities, and uploads a CycloneDX SBOM artifact.
+After the image scan passes, pushes to `develop`, `main`, and version tags
+(`v*`) publish the image to GitHub Container Registry (GHCR). Pull requests and
+feature branch pushes never publish. Images receive the branch or version tag
+and an immutable `sha-<short-commit>` tag; pushes to `main` also update
+`latest`.
+
+For example, pull the development image with
+`docker pull ghcr.io/tomattyy/contracts-api:develop`. GitHub Actions uses its
+repository-scoped `GITHUB_TOKEN`; no registry credential is stored in the
+repository. Configure the package visibility in GitHub Packages according to
+the intended audience.
 
 ## Branch workflow
 
