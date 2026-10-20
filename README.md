@@ -72,6 +72,92 @@ endpoints without first reviewing the configuration and its potential costs.
 Destroy the local resources with
 `terraform -chdir=terraform destroy` before stopping LocalStack.
 
+## Kubernetes
+
+The `k8s/` manifests deploy the API, PostgreSQL, and Redis in the `contracts`
+namespace. PostgreSQL uses a persistent volume claim; Redis is ephemeral. The
+API runs as a non-root user with a read-only root filesystem, restricted
+capabilities, resource requests/limits, and HTTP health probes.
+
+The API image is `ghcr.io/tomattyy/contracts-api:develop`. If the GHCR package
+is private, create an `imagePullSecret` named `ghcr-pull-secret` in the
+`contracts` namespace using a GitHub token with `read:packages`, then apply
+`k8s/overlays/private-ghcr` instead of the base manifests. Never commit that
+token or the database password. Confirm the `develop` image tag exists in GHCR;
+registry authentication does not help if the image has not been published.
+
+1. Confirm the active context with `kubectl config current-context` and use the
+   intended cluster.
+2. Create the namespace and the Kubernetes Secret. The PowerShell example
+   prompts for the password without echoing it and sends the encoded Secret
+   through standard input; it does not put the password in command arguments
+   or manifests:
+
+   ```powershell
+   kubectl create namespace contracts --dry-run=client -o yaml | kubectl apply -f -
+   $securePassword = Read-Host "Database password" -AsSecureString
+   $password = [System.Net.NetworkCredential]::new("", $securePassword).Password
+   $encodedPassword = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($password))
+   $secret = @{
+     apiVersion = "v1"
+     kind = "Secret"
+     metadata = @{ name = "contracts-api-secrets"; namespace = "contracts" }
+     type = "Opaque"
+     data = @{ DB_PASSWORD = $encodedPassword }
+   } | ConvertTo-Json -Depth 4 -Compress
+   $secret | kubectl apply -f -
+   Remove-Variable securePassword, password, encodedPassword, secret
+   ```
+
+   For a private GHCR package, create the pull secret with a GitHub token
+   scoped to `read:packages`. This PowerShell example prompts without echoing
+   the token and sends the generated Secret through standard input:
+
+   ```powershell
+   $username = Read-Host "GitHub username"
+   $secureToken = Read-Host "GitHub token with read:packages" -AsSecureString
+   $token = [System.Net.NetworkCredential]::new("", $secureToken).Password
+   $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${username}:$token"))
+   $dockerConfig = @{ auths = @{ "ghcr.io" = @{ auth = $auth } } } |
+     ConvertTo-Json -Compress
+   $encodedConfig = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($dockerConfig))
+   $pullSecret = @{
+     apiVersion = "v1"
+     kind = "Secret"
+     metadata = @{ name = "ghcr-pull-secret"; namespace = "contracts" }
+     type = "kubernetes.io/dockerconfigjson"
+     data = @{ ".dockerconfigjson" = $encodedConfig }
+   } | ConvertTo-Json -Depth 5 -Compress
+   $pullSecret | kubectl apply -f -
+   Remove-Variable username, secureToken, token, auth, dockerConfig, encodedConfig, pullSecret
+   ```
+
+3. Render and validate the resources without applying them. Use
+   `k8s/overlays/private-ghcr` instead of `k8s` if the GHCR package is private:
+
+   ```powershell
+   kubectl kustomize k8s
+   kubectl kustomize k8s/overlays/private-ghcr
+   kubectl apply --dry-run=server -k k8s
+   kubectl apply --dry-run=server -k k8s/overlays/private-ghcr
+   ```
+
+4. After reviewing the rendered resources and confirming the target context,
+   deploy with `kubectl apply -k k8s` (or
+   `kubectl apply -k k8s/overlays/private-ghcr` for a private package).
+5. Wait for the workloads with `kubectl -n contracts rollout status deployment/contracts-api`
+   and access the API locally with
+   `kubectl -n contracts port-forward service/contracts-api 3000:3000`.
+   The metrics endpoint is then available at `http://localhost:3000/metrics`.
+6. Remove the deployment with `kubectl delete -k k8s`. This also removes the
+   PostgreSQL PVC and its local data. Export any data you need first.
+
+The included HPA targets 70% CPU utilization and requires a functioning
+Metrics Server. The current Docker Desktop cluster does not have the
+`metrics.k8s.io` API installed, so autoscaling remains inactive until one is
+configured. The API Service is ClusterIP; no Ingress controller or external
+load balancer is assumed.
+
 ## Docker
 
 Docker Compose starts the API with PostgreSQL and Redis for local validation.

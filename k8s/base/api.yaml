@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contracts-api
+  labels:
+    app.kubernetes.io/name: contracts-api
+    app.kubernetes.io/part-of: contracts-api
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: contracts-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: contracts-api
+        app.kubernetes.io/part-of: contracts-api
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/tomattyy/contracts-api:develop
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: contracts-api-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: contracts-api-secrets
+                  key: DB_PASSWORD
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contracts-api
+  labels:
+    app.kubernetes.io/name: contracts-api
+    app.kubernetes.io/part-of: contracts-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: contracts-api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
