@@ -32,6 +32,7 @@ jobs:
         run: |
           kubectl kustomize k8s
           kubectl kustomize k8s/overlays/private-ghcr
+          kubectl kustomize k8s/observability
 
   terraform:
     name: Validate Terraform
