@@ -21,8 +21,8 @@ npm test
 The `CI` workflow runs these checks on pushes to `develop`, `main`, and
 `feature/**`, and on pull requests targeting `develop` or `main`. A failing
 check fails the workflow. Security scans run separately in the `Security`
-workflow; container publishing, infrastructure, deployment, and observability
-are left for later project phases.
+workflow; infrastructure, deployment, and observability are left for later
+project phases.
 
 The `Security` workflow runs Gitleaks secret detection, Semgrep SAST, `npm audit`
 dependency scanning, and Trivy configuration/IaC scanning on the same branches
@@ -47,9 +47,19 @@ Docker Desktop or Docker Engine with the Compose plugin is required.
 The production image uses separate dependency, build, and runtime stages,
 installs only production dependencies in the final image, and runs as the
 non-root `node` user. The container health check uses the existing `/metrics`
-route. The `Container` workflow builds the image without publishing it, scans
-for high and critical vulnerabilities, and uploads a CycloneDX SBOM artifact.
-Registry publishing is reserved for the artifact-management phase.
+route. The `Container` workflow builds and scans an image for high and critical
+vulnerabilities, and uploads a CycloneDX SBOM artifact.
+After the image scan passes, pushes to `develop`, `main`, and version tags
+(`v*`) publish the image to GitHub Container Registry (GHCR). Pull requests and
+feature branch pushes never publish. Images receive the branch or version tag
+and an immutable `sha-<short-commit>` tag; pushes to `main` also update
+`latest`.
+
+For example, pull the development image with
+`docker pull ghcr.io/tomattyy/contracts-api:develop`. GitHub Actions uses its
+repository-scoped `GITHUB_TOKEN`; no registry credential is stored in the
+repository. Configure the package visibility in GitHub Packages according to
+the intended audience.
 
 ## Branch workflow
 
