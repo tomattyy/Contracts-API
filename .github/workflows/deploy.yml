@@ -1,0 +1,106 @@
+name: Deploy to local Kubernetes
+
+on:
+  workflow_run:
+    workflows:
+      - Container
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-local-kubernetes-develop
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy verified image to Docker Desktop
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'develop' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - docker-desktop
+    environment: development
+
+    steps:
+      - name: Check out the image source revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.1
+
+      - name: Verify target cluster and prerequisites
+        shell: pwsh
+        env:
+          GHCR_PRIVATE: ${{ vars.GHCR_PRIVATE }}
+        run: |
+          $context = kubectl config current-context
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read the configured Kubernetes context."
+          }
+          if ($context.Trim() -ne "docker-desktop") {
+            throw "Refusing to deploy: expected context 'docker-desktop', got '$($context.Trim())'."
+          }
+          kubectl get namespace contracts
+          if ($LASTEXITCODE -ne 0) {
+            throw "Namespace 'contracts' must be created and its database secret provisioned before deployment."
+          }
+          kubectl get secret contracts-api-secrets --namespace contracts
+          if ($LASTEXITCODE -ne 0) {
+            throw "Secret 'contracts-api-secrets' is required before deployment."
+          }
+          if ($env:GHCR_PRIVATE -eq "true") {
+            kubectl get secret ghcr-pull-secret --namespace contracts
+            if ($LASTEXITCODE -ne 0) {
+              throw "GHCR_PRIVATE is true but secret 'ghcr-pull-secret' is missing."
+            }
+          }
+
+      - name: Apply Kubernetes resources
+        shell: pwsh
+        env:
+          GHCR_PRIVATE: ${{ vars.GHCR_PRIVATE }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          $overlay = "k8s"
+          if ($env:GHCR_PRIVATE -eq "true") {
+            $overlay = "k8s/overlays/private-ghcr"
+          }
+          kubectl apply -k $overlay
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to apply Kubernetes resources from '$overlay'."
+          }
+          $image = "ghcr.io/tomattyy/contracts-api:sha-$($env:IMAGE_SHA.Substring(0, 7))"
+          kubectl set image deployment/contracts-api api=$image --namespace contracts
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set the API image to '$image'."
+          }
+
+      - name: Wait for workloads to become ready
+        shell: pwsh
+        run: |
+          kubectl rollout status statefulset/postgres --namespace contracts --timeout=5m
+          if ($LASTEXITCODE -ne 0) {
+            throw "PostgreSQL did not become ready."
+          }
+          kubectl rollout status deployment/redis --namespace contracts --timeout=5m
+          if ($LASTEXITCODE -ne 0) {
+            throw "Redis did not become ready."
+          }
+          kubectl rollout status deployment/contracts-api --namespace contracts --timeout=5m
+          if ($LASTEXITCODE -ne 0) {
+            throw "The API deployment did not become ready."
+          }
