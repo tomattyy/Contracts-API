@@ -2,6 +2,12 @@ resource "aws_s3_bucket" "artifacts" {
   bucket = "contracts-api-artifacts"
 }
 
+resource "aws_kms_key" "artifacts" {
+  description             = "LocalStack KMS key for Contracts API artifact bucket encryption."
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
 resource "aws_s3_bucket_versioning" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
 
@@ -24,7 +30,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = aws_kms_key.artifacts.arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }

@@ -56,7 +56,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      SERVICES: s3
+      SERVICES: s3,kms
       AWS_DEFAULT_REGION: us-east-1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]

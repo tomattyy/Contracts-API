@@ -35,9 +35,11 @@ misconfigurations.
 
 Terraform provisions an S3 bucket in LocalStack for demonstrating IaC without
 creating AWS resources or incurring cloud costs. The API does not currently use
-this bucket; it is an infrastructure-learning resource. The Terraform workflow
-checks formatting and validates the configuration, while the Security workflow
-scans it with Trivy. CI does not run `terraform apply`.
+this bucket; it is an infrastructure-learning resource. The bucket blocks
+public access, enables versioning, and uses a customer-managed LocalStack KMS
+key for server-side encryption. The Terraform workflow checks formatting and
+validates the configuration, while the Security workflow scans it with Trivy.
+CI does not run `terraform apply`.
 
 1. Install Terraform 1.15.8 and Docker Compose.
 2. Start the LocalStack service with `docker compose up -d localstack`.
