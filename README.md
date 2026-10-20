@@ -65,10 +65,11 @@ CI does not run `terraform apply`.
    terraform -chdir=terraform apply
    ```
 
-The provider is explicitly configured to use `http://localhost:4566`, skip AWS
-credential/account validation, and use S3 path-style requests. Do not change
-the endpoint to a real AWS endpoint without first reviewing the configuration
-and its potential costs. Destroy the local resource with
+The S3 and KMS provider endpoints are explicitly configured to use
+`http://localhost:4566`; AWS credential/account validation is skipped and S3
+path-style requests are enabled. Do not change these endpoints to real AWS
+endpoints without first reviewing the configuration and its potential costs.
+Destroy the local resources with
 `terraform -chdir=terraform destroy` before stopping LocalStack.
 
 ## Docker
