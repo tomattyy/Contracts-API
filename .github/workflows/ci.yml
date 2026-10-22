@@ -15,6 +15,25 @@ permissions:
   contents: read
 
 jobs:
+  kubernetes:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.1
+
+      - name: Render Kubernetes manifests
+        run: |
+          kubectl kustomize k8s
+          kubectl kustomize k8s/overlays/private-ghcr
+          kubectl kustomize k8s/observability
+
   terraform:
     name: Validate Terraform
     runs-on: ubuntu-latest
